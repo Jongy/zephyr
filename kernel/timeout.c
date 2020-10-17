@@ -7,6 +7,7 @@
 #include <kernel.h>
 #include <spinlock.h>
 #include <ksched.h>
+#include <stdlib.h>
 #include <timeout_q.h>
 #include <syscall_handler.h>
 #include <drivers/timer/system_timer.h>
@@ -217,11 +218,81 @@ void z_set_timeout_expiry(int32_t ticks, bool is_idle)
 	}
 }
 
+// required configs:
+#ifdef CONFIG_SMP
+#error "need to handle per-cpu perf buf, or otherwise employ locking"
+#endif
+
+#ifdef CONFIG_TICKLESS_KERNEL
+#error "I expect z_clock_announce to be called at set intervals"
+#endif
+
+#if !defined(CONFIG_OVERRIDE_FRAME_POINTER_DEFAULT) || defined(CONFIG_OMIT_FRAME_POINTER)
+#error "enable CONFIG_OVERRIDE_FRAME_POINTER_DEFAULT then disable CONFIG_OMIT_FRAME_POINTER, so we can unwind by frame pointer"
+#endif
+
+#ifndef CONFIG_THREAD_STACK_INFO
+#error "enable CONFIG_THREAD_STACK_INFO, currently needed to extract registers"
+#endif
+
+static size_t left_ticks = 0;
+static uintptr_t perf_buf[4096];
+static size_t idx;
+
+static bool valid_stack(uintptr_t addr, k_tid_t current) {
+	return current->stack_info.start <= addr && addr < current->stack_info.start + current->stack_info.size;
+}
+
+struct shell;
+int cmd_perf_record(const struct shell *shell, size_t argc, char **argv) {
+	size_t ms = strtoul(argv[1], NULL, 10);
+
+	left_ticks = ms * CONFIG_SYS_CLOCK_TICKS_PER_SEC / MSEC_PER_SEC;
+	printk("Enabled perf for %zu ticks\n", left_ticks);
+
+	return 0;
+}
+
+int cmd_perf_print(const struct shell *shell, size_t argc, char **argv) {
+	printk("Perf buf length %zu\n", idx);
+	for (size_t i = 0; i < idx; i++) {
+		printk("%016lx\n", perf_buf[i]);
+	}
+
+	idx = 0;
+
+	return 0;
+}
+
 void z_clock_announce(int32_t ticks)
 {
 #ifdef CONFIG_TIMESLICING
 	z_time_slice(ticks);
 #endif
+
+	if (left_ticks != 0) {
+		// -64 to assure space for multiple stacks
+		if (idx < ARRAY_SIZE(perf_buf) - 64) {
+			const size_t start_idx = idx;
+
+			idx++;
+			perf_buf[idx++] = _current->callee_saved.rip;
+			void **rbp = (void**)_current->callee_saved.rbp;
+			while (valid_stack((uintptr_t)rbp, _current)) {
+				perf_buf[idx++] = (uintptr_t)rbp[1];
+				rbp = (void**)rbp[0];
+			}
+
+			perf_buf[start_idx] = idx - start_idx - 1;
+
+			left_ticks--;
+			if (left_ticks == 0) {
+				printk("perf done\n");
+			}
+		} else {
+			printk("perf buf override!\n");
+		}
+	}
 
 	k_spinlock_key_t key = k_spin_lock(&timeout_lock);
 

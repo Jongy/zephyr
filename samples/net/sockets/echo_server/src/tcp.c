@@ -172,8 +172,8 @@ static void handle_data(void *ptr1, void *ptr2, void *ptr3)
 				break;
 			}
 
-			LOG_DBG("TCP (%s): Received and replied with %d bytes",
-				data->proto, offset);
+			// LOG_DBG("TCP (%s): Received and replied with %d bytes",
+			// 	data->proto, offset);
 
 			if (++data->tcp.accepted[slot].counter % 1000 == 0U) {
 				LOG_INF("%s TCP: Sent %u packets", data->proto,

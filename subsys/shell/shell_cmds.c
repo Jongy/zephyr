@@ -466,3 +466,22 @@ SHELL_COND_CMD_ARG_REGISTER(CONFIG_SHELL_CMDS_RESIZE, resize, &m_sub_resize,
 SHELL_COND_CMD_ARG_REGISTER(CONFIG_SHELL_CMDS_SELECT, select, NULL,
 			    SHELL_HELP_SELECT, cmd_select, 2,
 			    SHELL_OPT_ARG_CHECK_SKIP);
+
+int cmd_perf_record(const struct shell *shell, size_t argc, char **argv);
+int cmd_perf_print(const struct shell *shell, size_t argc, char **argv);
+
+static int cmd_perf(const struct shell *shell, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
+	shell_print(shell, "perfy");
+	return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(m_sub_perf,
+	SHELL_CMD_ARG(record, NULL, "Start recording for X ms", cmd_perf_record, 2, 0),
+	SHELL_CMD_ARG(printbuf, NULL, "Print the perf buffer", cmd_perf_print, 0, 0),
+	SHELL_SUBCMD_SET_END
+);
+SHELL_CMD_ARG_REGISTER(perf, &m_sub_perf, "Perf!", cmd_perf, 0, 0);
